@@ -20,6 +20,9 @@ import {
   McpError,
 } from "@modelcontextprotocol/sdk/types.js";
 import axios, { AxiosInstance, AxiosError } from 'axios';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 
 import { TOOL_SCHEMAS } from './tools.js';
 import { RepositoryHandlers } from './handlers/repository.js';
@@ -27,22 +30,78 @@ import { BranchHandlers } from './handlers/branch.js';
 import { PullRequestHandlers } from './handlers/pullRequest.js';
 import { DeploymentHandlers } from './handlers/deployment.js';
 
-// Environment variables for authentication
-const BITBUCKET_USERNAME = process.env.BITBUCKET_USERNAME;
-const BITBUCKET_APP_PASSWORD = process.env.BITBUCKET_APP_PASSWORD;
-const BITBUCKET_WORKSPACE = process.env.BITBUCKET_WORKSPACE;
+// Authentication validation and priority logic
+function validateAndGetAuthConfig() {
+  const settingsPath = path.join(os.homedir(), '.claude', 'settings.json');
+  
+  let settings: any = {};
+  try {
+    if (fs.existsSync(settingsPath)) {
+      const settingsContent = fs.readFileSync(settingsPath, 'utf8');
+      settings = JSON.parse(settingsContent);
+    }
+  } catch (error) {
+    console.error('[Auth] Warning: Could not read ~/.claude/settings.json:', error);
+  }
 
-if (!BITBUCKET_USERNAME || !BITBUCKET_APP_PASSWORD) {
-  throw new Error('BITBUCKET_USERNAME and BITBUCKET_APP_PASSWORD environment variables are required');
+  // Extract Bitbucket credentials from MCP server settings
+  const serverConfig = settings.mcpServers?.['bitbucket-mcp-server'] || {};
+  const envConfig = serverConfig.env || {};
+  const BITBUCKET_USERNAME = envConfig.BITBUCKET_USERNAME || process.env.BITBUCKET_USERNAME;
+  const BITBUCKET_APP_PASSWORD = envConfig.BITBUCKET_APP_PASSWORD || process.env.BITBUCKET_APP_PASSWORD;
+  const BITBUCKET_API_TOKEN = envConfig.BITBUCKET_API_TOKEN || process.env.BITBUCKET_API_TOKEN;
+  const BITBUCKET_WORKSPACE = envConfig.BITBUCKET_WORKSPACE || process.env.BITBUCKET_WORKSPACE;
+
+  if (!BITBUCKET_USERNAME) {
+    throw new Error('BITBUCKET_USERNAME is required. Set it in ~/.claude/settings.json under mcpServers.bitbucket-mcp-server.env.BITBUCKET_USERNAME or as environment variable');
+  }
+
+  if (!BITBUCKET_WORKSPACE) {
+    throw new Error('BITBUCKET_WORKSPACE is required. Set it in ~/.claude/settings.json under mcpServers.bitbucket-mcp-server.env.BITBUCKET_WORKSPACE or as environment variable');
+  }
+
+  // Priority: API Token > App Password
+  if (BITBUCKET_API_TOKEN) {
+    console.error('[Auth] Using Bitbucket API Token authentication');
+    return {
+      username: BITBUCKET_USERNAME,
+      password: BITBUCKET_API_TOKEN,
+      workspace: BITBUCKET_WORKSPACE,
+      authMethod: 'API Token'
+    };
+  } else if (BITBUCKET_APP_PASSWORD) {
+    console.error('[Auth] Using Bitbucket App Password authentication');
+    return {
+      username: BITBUCKET_USERNAME,
+      password: BITBUCKET_APP_PASSWORD,
+      workspace: BITBUCKET_WORKSPACE,
+      authMethod: 'App Password'
+    };
+  } else {
+    throw new Error(
+      'Authentication required: Please provide either BITBUCKET_API_TOKEN or BITBUCKET_APP_PASSWORD in ~/.claude/settings.json under MCP server configuration.\n' +
+      'Example settings.json:\n' +
+      '{\n' +
+      '  "mcpServers": {\n' +
+      '    "bitbucket-mcp-server": {\n' +
+      '      "env": {\n' +
+      '        "BITBUCKET_USERNAME": "your-username",\n' +
+      '        "BITBUCKET_WORKSPACE": "your-workspace",\n' +
+      '        "BITBUCKET_API_TOKEN": "your-api-token"\n' +
+      '      }\n' +
+      '    }\n' +
+      '  }\n' +
+      '}'
+    );
+  }
 }
 
-if (!BITBUCKET_WORKSPACE) {
-  throw new Error('BITBUCKET_WORKSPACE environment variable is required');
-}
+const authConfig = validateAndGetAuthConfig();
 
 class BitbucketServer {
   private server: Server;
   private axiosInstance: AxiosInstance;
+  private authConfig: any;
   
   // Handler instances
   private repositoryHandlers: RepositoryHandlers;
@@ -51,6 +110,8 @@ class BitbucketServer {
   private deploymentHandlers: DeploymentHandlers;
 
   constructor() {
+    this.authConfig = validateAndGetAuthConfig();
+    
     this.server = new Server(
       {
         name: "bitbucket-mcp-server",
@@ -67,8 +128,8 @@ class BitbucketServer {
     this.axiosInstance = axios.create({
       baseURL: 'https://api.bitbucket.org/2.0',
       auth: {
-        username: BITBUCKET_USERNAME!,
-        password: BITBUCKET_APP_PASSWORD!,
+        username: this.authConfig.username,
+        password: this.authConfig.password,
       },
       headers: {
         'Accept': 'application/json',
@@ -77,10 +138,10 @@ class BitbucketServer {
     });
 
     // Initialize handler instances
-    this.repositoryHandlers = new RepositoryHandlers(this.axiosInstance, BITBUCKET_WORKSPACE!);
-    this.branchHandlers = new BranchHandlers(this.axiosInstance, BITBUCKET_WORKSPACE!);
-    this.pullRequestHandlers = new PullRequestHandlers(this.axiosInstance, BITBUCKET_WORKSPACE!, BITBUCKET_USERNAME!);
-    this.deploymentHandlers = new DeploymentHandlers(this.axiosInstance, BITBUCKET_WORKSPACE!);
+    this.repositoryHandlers = new RepositoryHandlers(this.axiosInstance, this.authConfig.workspace);
+    this.branchHandlers = new BranchHandlers(this.axiosInstance, this.authConfig.workspace);
+    this.pullRequestHandlers = new PullRequestHandlers(this.axiosInstance, this.authConfig.workspace, this.authConfig.username);
+    this.deploymentHandlers = new DeploymentHandlers(this.axiosInstance, this.authConfig.workspace);
 
     this.setupToolHandlers();
     
