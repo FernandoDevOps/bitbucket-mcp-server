@@ -2,7 +2,7 @@
 
 A Model Context Protocol (MCP) server that provides comprehensive tools for interacting with Bitbucket repositories through the Bitbucket API. This server enables agents to perform repository operations, manage branches, handle pull requests, analyze commit history, work with repository tags, and monitor deployments.
 
-## Version 0.5.0
+## Version 0.6.0
 
 ## Features
 
@@ -44,7 +44,7 @@ A Model Context Protocol (MCP) server that provides comprehensive tools for inte
 - Node.js (v14 or higher)
 - npm or yarn
 - Bitbucket account with repository access
-- Bitbucket App Password
+- Bitbucket API Token (recommended) or App Password (deprecated but still supported)
 
 ### Setup
 
@@ -63,20 +63,50 @@ A Model Context Protocol (MCP) server that provides comprehensive tools for inte
    npm run build
    ```
 
-4. **Create Bitbucket App Password:**
+4. **Create Bitbucket API Token (Recommended):**
    - Go to https://bitbucket.org/account/settings/app-passwords/
    - Click "Create app password"
-   - Select permissions:
+   - Give it a descriptive name (e.g., "MCP Server Token")
+   - Select the following scopes:
      - **Repositories**: Read, Write, Admin
      - **Pull requests**: Read, Write
      - **Account**: Read
-   - Copy the generated password
+   - Copy the generated token
+
+   **Note**: While called "app password" in the UI, this creates an API token that's more secure than traditional App Passwords.
+
+5. **Alternative: App Password (Deprecated but Still Supported):**
+   - Legacy App Passwords continue to work for backward compatibility
+   - However, API tokens are recommended for better security and features
+   - See the Migration Guide below to upgrade from App Passwords to API tokens
 
 ## Configuration
 
 ### MCP Settings
 Add the server to your MCP configuration file:
 
+**With API Token (Recommended):**
+```json
+{
+  "mcpServers": {
+    "bitbucket-mcp-server": {
+      "autoApprove": [],
+      "disabled": false,
+      "timeout": 60,
+      "command": "node",
+      "args": ["/path/to/bitbucket-mcp-server/build/index.js"],
+      "env": {
+        "BITBUCKET_USERNAME": "your-username@domain.com",
+        "BITBUCKET_API_TOKEN": "your-api-token",
+        "BITBUCKET_WORKSPACE": "your-workspace-name"
+      },
+      "transportType": "stdio"
+    }
+  }
+}
+```
+
+**With App Password (Deprecated but Still Supported):**
 ```json
 {
   "mcpServers": {
@@ -98,9 +128,18 @@ Add the server to your MCP configuration file:
 ```
 
 ### Environment Variables
+
+**For API Token Authentication (Recommended):**
 - `BITBUCKET_USERNAME`: Your Bitbucket username/email
-- `BITBUCKET_APP_PASSWORD`: Your Bitbucket App Password (not regular password)
+- `BITBUCKET_API_TOKEN`: Your Bitbucket API Token
 - `BITBUCKET_WORKSPACE`: Your workspace/organization name
+
+**For App Password Authentication (Deprecated but Supported):**
+- `BITBUCKET_USERNAME`: Your Bitbucket username/email
+- `BITBUCKET_APP_PASSWORD`: Your Bitbucket App Password
+- `BITBUCKET_WORKSPACE`: Your workspace/organization name
+
+**Note**: Use either `BITBUCKET_API_TOKEN` or `BITBUCKET_APP_PASSWORD`, not both. API tokens are recommended for better security and future-proofing.
 
 ## Available Tools
 
@@ -597,18 +636,100 @@ Errors are returned with descriptive messages to help troubleshoot issues.
 
 ## Security
 
-- Uses Bitbucket App Passwords (more secure than regular passwords)
-- Credentials are stored as environment variables
-- All API communications use HTTPS
-- No credentials are logged or exposed in responses
+- **API Tokens (Recommended)**: More secure than App Passwords with better access control
+- **App Passwords**: Deprecated but still supported for backward compatibility
+- **Environment Variables**: Credentials are stored as environment variables, never in code
+- **HTTPS**: All API communications use HTTPS encryption
+- **No Logging**: No credentials are logged or exposed in responses
+- **Least Privilege**: Only request necessary permissions for operations
+
+### API Token vs App Password Security Benefits
+
+| Feature | API Token | App Password |
+|---------|-----------|-------------|
+| Security | Better access control and monitoring | Legacy security model |
+| Granular Permissions | Fine-grained scope control | Basic permission sets |
+| Audit Trail | Enhanced logging and tracking | Limited audit capabilities |
+| Revocation | Easy token revocation | Manual password management |
+| Future Support | Actively maintained | Deprecated, limited updates |
+
+### Migration Guide: App Password to API Token
+
+**Why Migrate?**
+- Enhanced security with better access control
+- Improved audit trail and monitoring
+- Future-proof authentication method
+- Better integration with modern DevOps practices
+
+**Migration Steps:**
+
+1. **Create New API Token:**
+   - Go to https://bitbucket.org/account/settings/app-passwords/
+   - Click "Create app password"
+   - Use descriptive name: "MCP Server API Token"
+   - Select required scopes:
+     - **Repositories**: Read, Write, Admin
+     - **Pull requests**: Read, Write
+     - **Account**: Read
+   - Copy the generated token
+
+2. **Update Environment Variables:**
+   ```bash
+   # Remove old App Password
+   unset BITBUCKET_APP_PASSWORD
+   
+   # Set new API Token
+   export BITBUCKET_API_TOKEN="your-new-api-token"
+   ```
+
+3. **Update MCP Configuration:**
+   - Replace `BITBUCKET_APP_PASSWORD` with `BITBUCKET_API_TOKEN` in your MCP config
+   - Keep `BITBUCKET_USERNAME` and `BITBUCKET_WORKSPACE` unchanged
+
+4. **Test Connection:**
+   - Restart your MCP server
+   - Test basic operations like listing repositories
+   - Verify all functionality works as expected
+
+5. **Revoke Old App Password:**
+   - Once confirmed working, revoke the old App Password
+   - Go to https://bitbucket.org/account/settings/app-passwords/
+   - Delete the old App Password entry
+
+**Rollback Plan:**
+- Keep your old App Password active during migration
+- If issues occur, switch back to `BITBUCKET_APP_PASSWORD`
+- Contact support if persistent issues with API tokens
 
 ## API Rate Limits
 
 Bitbucket API has rate limits. The server will return appropriate error messages if limits are exceeded. Consider implementing exponential backoff for high-frequency operations.
 
-## What's New in Version 0.5.0
+## What's New in Version 0.6.0
 
 ### New Features Added:
+1. **API Token Support**: Enhanced authentication with API tokens (recommended over App Passwords)
+   - Support for both API tokens and App Passwords (backward compatibility)
+   - Improved security with better access control
+   - Enhanced audit trail and monitoring capabilities
+   - Future-proof authentication method
+
+2. **Enhanced Authentication Options**:
+   - `BITBUCKET_API_TOKEN` environment variable for API token authentication
+   - `BITBUCKET_APP_PASSWORD` still supported for backward compatibility
+   - Clear migration guide from App Passwords to API tokens
+   - Comprehensive troubleshooting documentation
+
+### Enhanced Capabilities:
+- Better security with granular permission control
+- Improved credential management and revocation
+- Enhanced error handling for authentication issues
+- Comprehensive migration documentation and troubleshooting
+- Clear comparison between API tokens and App Passwords
+
+### Previous Version Highlights:
+
+#### Version 0.5.0:
 1. **Repository Cloning**: SSH and HTTPS repository cloning support
    - `clone_repository` - Generate git clone commands with SSH (default) or HTTPS protocol
    - Support for specific branch cloning
@@ -616,14 +737,12 @@ Bitbucket API has rate limits. The server will return appropriate error messages
    - SSH setup instructions and prerequisites
    - Complete git command generation ready for terminal execution
 
-### Enhanced Capabilities:
-- SSH protocol as default for secure cloning
-- Flexible protocol selection (SSH/HTTPS)
-- Branch-specific cloning support
-- Comprehensive clone instructions with setup guidance
-- Repository verification before generating clone commands
-
-### Previous Version Highlights:
+2. **Enhanced Cloning Capabilities**:
+   - SSH protocol as default for secure cloning
+   - Flexible protocol selection (SSH/HTTPS)
+   - Branch-specific cloning support
+   - Comprehensive clone instructions with setup guidance
+   - Repository verification before generating clone commands
 
 #### Version 0.4.0:
 1. **Deployment Management**: Complete deployment monitoring and management capabilities
@@ -681,10 +800,15 @@ npm run build
 
 ### Running Locally
 ```bash
-# Set environment variables
+# Set environment variables (API Token - Recommended)
 export BITBUCKET_USERNAME="your-username"
-export BITBUCKET_APP_PASSWORD="your-app-password"
+export BITBUCKET_API_TOKEN="your-api-token"
 export BITBUCKET_WORKSPACE="your-workspace"
+
+# Alternative: App Password (Deprecated)
+# export BITBUCKET_USERNAME="your-username"
+# export BITBUCKET_APP_PASSWORD="your-app-password"
+# export BITBUCKET_WORKSPACE="your-workspace"
 
 # Run the server
 node build/index.js
@@ -695,14 +819,17 @@ node build/index.js
 ### Common Issues
 
 1. **Authentication Failed**
-   - Verify your App Password is correct
+   - **For API Tokens**: Verify your API token is correct and has required scopes
+   - **For App Passwords**: Verify your App Password is correct and has required permissions
    - Ensure your username is correct (use email if that's how you log in)
-   - Check that the App Password has the required permissions
+   - Check that you're using the correct environment variable (`BITBUCKET_API_TOKEN` vs `BITBUCKET_APP_PASSWORD`)
+   - Verify the token/password hasn't expired or been revoked
 
 2. **Repository Not Found**
    - Verify the repository name is correct (case-sensitive)
    - Ensure you have access to the repository
    - Check that the workspace name is correct
+   - Confirm your API token has repository read permissions
 
 3. **Branch Not Found**
    - Verify the branch name exists in the repository
@@ -713,6 +840,41 @@ node build/index.js
    - Check that all environment variables are set
    - Verify the build completed successfully
    - Check the Node.js version compatibility
+   - Ensure you're using either API token OR App Password, not both
+
+### API Token Specific Troubleshooting
+
+5. **API Token Issues**
+   - **Invalid Token**: Verify the token was copied correctly (no extra spaces/characters)
+   - **Insufficient Scopes**: Ensure your token has all required permissions:
+     - Repositories: Read, Write, Admin
+     - Pull requests: Read, Write
+     - Account: Read
+   - **Token Revoked**: Check if the token was accidentally deleted in Bitbucket settings
+   - **Workspace Access**: Verify the token has access to the specified workspace
+
+6. **Migration Issues**
+   - **Mixed Credentials**: Don't set both `BITBUCKET_API_TOKEN` and `BITBUCKET_APP_PASSWORD`
+   - **Config Mismatch**: Ensure your MCP configuration matches your environment variables
+   - **Caching**: Clear any cached credentials or restart your MCP client
+
+### Testing Your Configuration
+
+**Quick Test Commands:**
+```bash
+# Test API token authentication
+curl -u "your-username:your-api-token" \
+  "https://api.bitbucket.org/2.0/user"
+
+# Test workspace access
+curl -u "your-username:your-api-token" \
+  "https://api.bitbucket.org/2.0/workspaces/your-workspace"
+```
+
+**Expected Response:**
+- Status 200 with user/workspace information
+- Status 401 indicates authentication failure
+- Status 403 indicates insufficient permissions
 
 ### Debug Mode
 To enable detailed logging, you can modify the server code to include debug statements or check the MCP client logs for detailed error information.
